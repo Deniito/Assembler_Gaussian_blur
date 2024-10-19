@@ -46,6 +46,7 @@ void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elaps
 void SetMenuText(HWND hwnd, const wchar_t* newText);
 std::string wstring_to_string(const std::wstring& wstr);
 void GaussBlur(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius);
+void GaussBlurASM(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius);
 std::vector<std::wstring> LoadImagesFromFolder(const std::wstring& folderPath);
 void TestBlurOnImage(HWND hwnd, const std::wstring& imagePath, const int* radii, size_t numRadii, ImageData* imgData);
 void SaveElapsedTimeToCSV(const std::string& filename, int radius, double elapsedTime);
@@ -80,6 +81,7 @@ float* calcuGaussKernel1D(int radius)
 	}
 	return kernel;
 }
+
 void GaussianBlurHorizontal(unsigned char* src, float* kernel, int width, int height, int radius) {
     int kernel_size = 2 * radius + 1;
     unsigned char* blr = new unsigned char[width * height * 3]; // For BGR images
@@ -99,17 +101,17 @@ void GaussianBlurHorizontal(unsigned char* src, float* kernel, int width, int he
 
                 // Apply the kernel for each channel (B, G, R)
                 int srcIndex = (y * width + neighbor_x) * 3; // 3 bytes per pixel (BGR)
+
                 sum[0] += src[srcIndex] * kernel[radius + k];     // Blue channel
                 sum[1] += src[srcIndex + 1] * kernel[radius + k]; // Green channel
                 sum[2] += src[srcIndex + 2] * kernel[radius + k]; // Red channel
-                weight_sum += kernel[radius + k];
             }
 
             // Store the result in the blurred image
             int destIndex = (y * width + x) * 3; // 3 bytes per pixel (BGR)
-            blr[destIndex] = static_cast<unsigned char>(sum[0] / weight_sum);         // Blue
-            blr[destIndex + 1] = static_cast<unsigned char>(sum[1] / weight_sum);     // Green
-            blr[destIndex + 2] = static_cast<unsigned char>(sum[2] / weight_sum);     // Red
+            blr[destIndex] = static_cast<unsigned char>(sum[0]);         // Blue
+            blr[destIndex + 1] = static_cast<unsigned char>(sum[1]);     // Green
+            blr[destIndex + 2] = static_cast<unsigned char>(sum[2]);     // Red
         }
     }
 
@@ -140,29 +142,68 @@ void GaussianBlurVertical(unsigned char* src, float* kernel, int width, int heig
                 sum[0] += src[srcIndex] * kernel[radius + k];     // Blue channel
                 sum[1] += src[srcIndex + 1] * kernel[radius + k]; // Green channel
                 sum[2] += src[srcIndex + 2] * kernel[radius + k]; // Red channel
-                weight_sum += kernel[radius + k];
             }
 
             // Store the result in the blurred image
             int destIndex = (y * width + x) * 3; // 3 bytes per pixel (BGR)
-            blr[destIndex] = static_cast<unsigned char>(sum[0] / weight_sum);         // Blue
-            blr[destIndex + 1] = static_cast<unsigned char>(sum[1] / weight_sum);     // Green
-            blr[destIndex + 2] = static_cast<unsigned char>(sum[2] / weight_sum);     // Red
+            blr[destIndex] = static_cast<unsigned char>(sum[0]);         // Blue
+            blr[destIndex + 1] = static_cast<unsigned char>(sum[1]);     // Green
+            blr[destIndex + 2] = static_cast<unsigned char>(sum[2]);     // Red
         }
     }
 
     std::memcpy(src, blr, width * height * 3); // Copy blurred data back to src
     delete[] blr; // Clean up memory
 }
+void SavePixelDataToTxt(const unsigned char* pixel_data, int width, int height, const char* filename)
+{
+	//Function meant purely for debugging purposes
+    std::ofstream file(filename);
+
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file for writing\n";
+        return;
+    }
+
+    // Save pixel data into the text file
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            // Assuming BGR format (Blue, Green, Red), 3 channels per pixel
+            int idx = (y * width + x) * 3;
+            file << (int)pixel_data[idx] << " "      // Blue channel
+                << (int)pixel_data[idx + 1] << " "  // Green channel
+                << (int)pixel_data[idx + 2] << " "; // Red channel
+        }
+        file << "\n";
+    }
+
+    file.close();
+    std::cout << "Pixel data saved to " << filename << std::endl;
+}
 void GaussBlur(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius) 
 {
-	float* kernel = calcuGaussKernel1D(radius);
-	//float* kernel = calcuGaussKernel1DASM(radius);
-	GaussianBlurHorizontal(pixel_data, kernel, width, height, radius);
-	GaussianBlurVertical(pixel_data, kernel, width, height, radius);
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_before_blur.txt");
+    float* kernel = calcuGaussKernel1D(radius);
+    GaussianBlurHorizontal(pixel_data, kernel, width, height, radius);
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
+    GaussianBlurVertical(pixel_data, kernel, width, height, radius);
     delete[] kernel;
 }
+void GaussBlurASM(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius)
+{
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_before_blur.txt");
+    float* kernel = calcuGaussKernel1DASM(radius);
+    GaussianBlurHorizontalASM(pixel_data, kernel, width, height, radius);
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
+    GaussianBlurVertical(pixel_data, kernel, width, height, radius);
 
+
+
+    // delete[] kernel;
+}
 
 void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elapsedTime) {
     std::ofstream csvFile;
@@ -244,10 +285,7 @@ void TestBlurOnImage(HWND hwnd, const std::wstring& imagePath, const int* radii,
         RedrawImage(hwnd);
         UpdateWindow(hwnd);
         Sleep(1000);
-
     }
-
-
 }
 
 // Function to apply blur effect
@@ -276,7 +314,7 @@ double ApplyBlur(HWND hwnd, ImageData* imgData, int rad) {
     {
         QueryPerformanceFrequency(&frequency);
         QueryPerformanceCounter(&start);
-        //GaussBlurASM(imgData->blurPixelData, imgData->imageWidth * imgData->imageHeight * 3, imgData->imageWidth, imgData->imageHeight, rad);
+        GaussBlurASM(imgData->blurPixelData, imgData->imageWidth * imgData->imageHeight * 3, imgData->imageWidth, imgData->imageHeight, rad);
         QueryPerformanceCounter(&end);
 
     }
