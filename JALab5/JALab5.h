@@ -17,6 +17,7 @@
 #endif
 
 extern "C" void  GaussianBlurHorizontalASM(unsigned char* src, float* kernel, int width, int height, int radius);
+extern "C" void  GaussianBlurVerticalASM(unsigned char* src, float* kernel, int width, int height, int radius);
 extern "C" float*  calcuGaussKernel1DASM(int radius);
 
 

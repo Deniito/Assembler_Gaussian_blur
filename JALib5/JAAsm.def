@@ -2,3 +2,4 @@ LIBRARY JALib5
 EXPORTS
 calcuGaussKernel1DASM
 GaussianBlurHorizontalASM
+GaussianBlurVerticalASM

@@ -406,6 +406,9 @@ GaussianBlurHorizontalASM PROC
 	pop		rbp
 	ret
 GaussianBlurHorizontalASM ENDP
+
+
+GaussianBlurVerticalASM PROC
 	; rcx	'src' 
 	; rdx	'kernel' 
 	; r8	'img_width' 
@@ -430,11 +433,193 @@ GaussianBlurHorizontalASM ENDP
 	lea		r15, blr_tab	; destination address
 	xor		rdi, rdi		; image y val = 0
 
+	height_loop:
+
+		mov		rcx, src		;load src
+		lea		r15, blr_tab	;load dest
+
+		mov		rsi, rdi
+		imul	rsi, img_width
+		imul 	rsi, 3			;calc y offset
+
+		add		r15, rsi		; move to correct y position in destination
+		add		rcx, rsi		; move to correct y position in source
+			
+		xor		r10, r10		; image x val = 0 (iterator)
+
+			width_loop:
+				
+				mov		r11, r10
+				imul 	r11, 3	;calc x offset
+
+				add 	r15, r11	; move to correct x position in destination
+				add		rcx, r11	; move to correct x position in source
+
+				xor 	r8, r8		;index of pixel in processing
+				xor		r9, r9		;kernel table
+				xor 	r13, r13	;iterator for kernel
+				sub		r13, radius	;start from the left edge of the kernel
+
+				; RCX - pixel pos in source 
+				; R15 - pixel pos in destination
+				apply_kernel_loop:
+					mov		r8, rcx		;mov pos x
+					mov 	r9, r13		;mov iterator
+
+					imul	r9, rel_img_width ;iterator times img width = pixel offset
+
+
+					add		r8, r9	;pos x + k	;pos + offset
+					
+					mov 	rax, src
+					
+					cmp     r8, rax		;is kernel in the img
+					jl		clampMIN	;if False clamp to min  
+					jmp     contToMax	;if True check the max
+					
+
+					clampMIN:
+						mov		r9, src
+						add 	r9, r11 ;set the pixel value to the start of the img + x offset 
+						mov		r8, r9
+						jmp     cont	;if min was out of range there is no need to check max, continue
+
+					contToMax:
+						mov		rax, img_width
+						imul	rax, img_height
+						imul	rax, 3
+						add		rax, src
+						sub 	rax, 3		; last val in the img
+
+						cmp     r8, rax		;is the kernel outside
+						jge     clampMAX	;True clamp the val to the last in line
+						jmp     cont        ;False continue 
+
+					clampMAX:
+						mov		r9, rax
+						add     r9, 3		;end of img
+						sub		r9, rel_img_width
+						add 	r9, r11		;start of last img line + x offset
+
+						mov		r8, r9		; set to the end of the line
+					cont:
+
+					MOV    R14, r8
+
+					mov		al, byte ptr [r8]		;read Blue from source
+					mov		bl, byte ptr [r8+1]		;read Green from source
+					mov		r12b, byte ptr [r8+2]	;read Red from source
+
+					;move to correct offset in kernel
+					lea     r8, kernel	;load kernel
+
+					mov		r9, r13	
+					add		r9, radius
+					shl 	r9, 2		;iterator*4 = kernel tab offset
+
+					add		r8, r9		; add offset
+					movss	xmm0, dword ptr [r8]	;read kernel value
+					;multiply pixel by kernel
+
+					;__________________BLUE____________________
+					movzx eax, al			
+					cvtsi2ss xmm1, eax
+
+					mulss xmm1, xmm0       
+					movss xmm2, sum_B        ; Load the float sum_B into 
+					addss xmm2, xmm1         ; xmm2 = xmm2 + xmm1
+					movss sum_B, xmm2        ; Store the new sum_B value              
+
+
+					;__________________GREEN____________________
+					movzx ebx, bl				
+					cvtsi2ss xmm1, ebx				
+
+					mulss xmm1, xmm0       
+					movss xmm2, sum_G        ; Load the float sum_B into 
+					addss xmm2, xmm1		 ; xmm2 = xmm2 + xmm1
+					movss sum_G, xmm2        ; Store the new sum_B value                 
+
+					;__________________RED____________________
+					movzx r12d, r12b				
+					cvtsi2ss xmm1, r12d				
+
+					mulss xmm1, xmm0       
+					movss xmm2, sum_R        ; Load the float sum_B into 
+					addss xmm2, xmm1           ; xmm2 = xmm2 + xmm1
+					movss sum_R, xmm2        ; Store the new sum_B value      
+
+					inc r13
+					cmp r13, radius
+					jl apply_kernel_loop
+
+				;_____________MOVE_TO_DEST_______________
+				movss	xmm0, sum_B      ; Load sum_B into xmm0
+				movss	xmm1, sum_G      ; Load sum_G into xmm1
+				movss	xmm2, sum_R      ; Load sum_R into xmm2
+
+				roundss xmm0, xmm0, 0 
+				cvttss2si rax, xmm0     
+				mov sum_B, 0   
+				
+				roundss xmm1, xmm1, 0 
+				cvttss2si rbx, xmm1    
+				mov sum_G, 0  
+				
+				roundss xmm2, xmm2, 0 
+				cvttss2si r12, xmm2     
+				mov sum_R, 0          
+
+				mov 	byte ptr [r15], al		;write Blue to destination
+				mov 	byte ptr [r15+1], bl		;write Green to destination
+				mov 	byte ptr [r15+2], r12b	;write Red to destination
+
+				sub 	rcx, r11	;move source back to line start
+				sub 	r15, r11	;move destination back to line start
+
+				inc		r10 
+
+				cmp		r10, img_width
+				jl		width_loop
+
+		inc		rdi
+		cmp		rdi, img_height
+		jl		height_loop
+;____________________________________________________
+;move dest to src
+
+	xor		rdi, rdi	;reset index
+		
+	mov		rsi, img_width	
+	imul	rsi, img_height
+	imul	rsi, 3		
+	sub 	rsi, 3		;calc tab size - tab is indexed from 0
+
+	mov 	blr_tab_size, rsi
+
+	mov_data_loop:
+
+
+		lea		r15, blr_tab	; destination address
+		mov		rcx, src		;load src address
+
+		add		rcx, rdi    ;move src to correct offset
+		add		r15, rdi	;move dest to correct offset
+		
+		mov		al, byte ptr [r15]		;read Blue from dest
+		mov		bl, byte ptr [r15+1]	;read Green from dest
+		mov		r12b, byte ptr [r15+2]	;read Red from dest
+
+		mov 	byte ptr [rcx], al			;write Blue to src
+		mov 	byte ptr [rcx+1], bl		;write Green to src
+		mov 	byte ptr [rcx+2], r12b		;write Red to src
+
+		add		rdi, 3
+		cmp		rdi, blr_tab_size
+		jl		mov_data_loop
+
 	pop		rsp
 	pop		rbp
 	ret
-
-GaussianBlurVerticalASM PROC
-
 GaussianBlurVerticalASM ENDP
 END

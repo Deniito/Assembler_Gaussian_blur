@@ -89,7 +89,6 @@ void GaussianBlurHorizontal(unsigned char* src, float* kernel, int width, int he
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             float sum[3] = { 0.0f, 0.0f, 0.0f }; // To hold sums for B, G, R channels
-            float weight_sum = 0.0f;
 
             // Apply kernel to the pixel at (x, y)
             for (int k = -radius; k <= radius; ++k) {
@@ -127,7 +126,6 @@ void GaussianBlurVertical(unsigned char* src, float* kernel, int width, int heig
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             float sum[3] = { 0.0f, 0.0f, 0.0f }; // To hold sums for B, G, R channels
-            float weight_sum = 0.0f;
 
             // Apply kernel to the pixel at (x, y)
             for (int k = -radius; k <= radius; ++k) {
@@ -198,7 +196,7 @@ void GaussBlurASM(unsigned char* pixel_data, int pixel_data_size, int width, int
     float* kernel = calcuGaussKernel1DASM(radius);
     GaussianBlurHorizontalASM(pixel_data, kernel, width, height, radius);
     //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
-    GaussianBlurVertical(pixel_data, kernel, width, height, radius);
+    GaussianBlurVerticalASM(pixel_data, kernel, width, height, radius);
 
 
 
