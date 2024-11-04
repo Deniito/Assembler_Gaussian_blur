@@ -19,9 +19,21 @@
 #include <vector>
 #include <filesystem>
 #include <commdlg.h> 
+#include <map>
 
 #pragma comment(lib, "gdiplus.lib")
 
+/*
+--------------------------------------------------
+
+  Assembler Programming Languages Gaussian Blur;
+
+  Author:	Daniel Pasierb;
+  INF SSI GLI;
+  SEK 10;
+
+--------------------------------------------------
+*/
 using namespace Gdiplus;
 
 
@@ -42,20 +54,15 @@ void RenderImage(HWND hwnd, ImageData* imgData);
 double ApplyBlur(HWND hwnd, ImageData* imgData, int rad);
 void RedrawImage(HWND hwnd);
 void TestBlurOnImages(HWND hwnd, ImageData* imgData);
-void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elapsedTime);
+void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elapsedTime, bool useASM);
 void SetMenuText(HWND hwnd, const wchar_t* newText);
 std::string wstring_to_string(const std::wstring& wstr);
 void GaussBlur(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius);
 void GaussBlurASM(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius);
 std::vector<std::wstring> LoadImagesFromFolder(const std::wstring& folderPath);
 void TestBlurOnImage(HWND hwnd, const std::wstring& imagePath, const int* radii, size_t numRadii, ImageData* imgData);
-void SaveElapsedTimeToCSV(const std::string& filename, int radius, double elapsedTime);
 std::string wstring_to_string(const std::wstring& wstr);
 void LoadNewImage(HWND hwnd, ImageData* imgData, const std::wstring& imagePath);
-
-
-
-// Function to apply a box blur on the image data
 
 
 // Function to apply Gaussian blur
@@ -186,38 +193,115 @@ void GaussBlur(unsigned char* pixel_data, int pixel_data_size, int width, int he
     //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_before_blur.txt");
     float* kernel = calcuGaussKernel1D(radius);
     GaussianBlurHorizontal(pixel_data, kernel, width, height, radius);
-    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
     GaussianBlurVertical(pixel_data, kernel, width, height, radius);
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
     delete[] kernel;
 }
 void GaussBlurASM(unsigned char* pixel_data, int pixel_data_size, int width, int height, int radius)
 {
-    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_before_blur.txt");
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_before_blurASM.txt");
     float* kernel = calcuGaussKernel1DASM(radius);
     GaussianBlurHorizontalASM(pixel_data, kernel, width, height, radius);
-    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blur.txt");
     GaussianBlurVerticalASM(pixel_data, kernel, width, height, radius);
 
-
-
+    //SavePixelDataToTxt(pixel_data, width, height, "pixel_data_after_blurASM.txt");
     // delete[] kernel;
 }
 
-void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elapsedTime) {
-    std::ofstream csvFile;
-    // Open the CSV file in append mode
-    csvFile.open("blur_elapsed_time_test.csv", std::ios::app);
+bool IsFileEmpty(const std::string& fileName) {
+    std::ifstream file(fileName, std::ios::ate); // Open file at the end
+    return file.tellg() == 0; // If at start, file is empty
+}
 
-    // Check if the file opened successfully
-    if (csvFile.is_open()) {
-        // Write the image name, radius, and elapsed time
-        csvFile << imageName << "," << radius << "," << elapsedTime << "\n";
-        csvFile.close(); // Close the file
+void SaveElapsedTimeToCSV(const std::string& imageName, int radius, double elapsedTime, bool useASM) {
+    const std::string fileName = "blur_elapsed_time_test.csv";
+    std::ifstream inputFile(fileName);
+    std::stringstream buffer;
+
+    // Maps to hold data, with each entry as {imageName -> [kernel1_time, kernel5_time, kernel10_time]}
+    std::map<std::string, std::vector<std::string>> asmData;
+    std::map<std::string, std::vector<std::string>> cppData;
+
+    // If file exists, load data into the maps
+    if (inputFile.is_open()) {
+        buffer << inputFile.rdbuf();
+        inputFile.close();
     }
-    else {
-        // Error handling if the file can't be opened
-        MessageBox(nullptr, L"Unable to open CSV file!", L"Error", MB_OK | MB_ICONERROR);
+
+    std::string line;
+    bool asmSection = false, cppSection = false;
+
+    std::istringstream fileContent(buffer.str());
+
+    while (std::getline(fileContent, line)) {
+        std::stringstream lineStream(line);
+        std::string cell;
+        std::vector<std::string> row;
+
+        while (std::getline(lineStream, cell, '\t')) {
+            row.push_back(cell);
+        }
+
+        // Switch sections based on headers
+        if (row.size() > 0) {
+            if (row[0] == "ASM") {
+                asmSection = true;
+                cppSection = false;
+                continue;
+            }
+            else if (row[0] == "C++") {
+                cppSection = true;
+                asmSection = false;
+                continue;
+            }
+        }
+
+        // Skip headers inside sections
+        if ((asmSection || cppSection) && row.size() > 1 && row[0] == "file_name") continue;
+
+        // Extract rows within each section
+        if (row.size() == 4 && !row[0].empty()) {
+            std::string name = row[0];
+            if (asmSection) {
+                asmData[name] = { row[1], row[2], row[3] };
+            }
+            else if (cppSection) {
+                cppData[name] = { row[1], row[2], row[3] };
+            }
+        }
     }
+
+    // Update the relevant section with new data
+    std::vector<std::string>& times = useASM ? asmData[imageName] : cppData[imageName];
+    if (times.empty()) times = { "0", "0", "0" };  // Initialize if not present
+
+    // Update the correct kernel time slot (assuming radii of 1, 5, and 10)
+    if (radius == 1) times[0] = std::to_string(elapsedTime);
+    else if (radius == 5) times[1] = std::to_string(elapsedTime);
+    else if (radius == 10) times[2] = std::to_string(elapsedTime);
+
+    // Write back to the file, starting with headers
+    std::ofstream outputFile(fileName);
+    outputFile << "ASM\nfile_name\t1\t5\t10\n";
+
+    for (const auto& [name, timeValues] : asmData) {
+        outputFile << name;
+        for (const auto& time : timeValues) {
+            outputFile << "\t" << (time.empty() ? "0" : time);
+        }
+        outputFile << "\n";
+    }
+
+    outputFile << "C++\nfile_name\t1\t5\t10\n";
+    for (const auto& [name, timeValues] : cppData) {
+        outputFile << name;
+        for (const auto& time : timeValues) {
+            outputFile << "\t" << (time.empty() ? "0" : time);
+        }
+        outputFile << "\n";
+    }
+
+    outputFile.close();
 }
 
 std::string wstring_to_string(const std::wstring& wstr) {
@@ -279,7 +363,7 @@ void TestBlurOnImage(HWND hwnd, const std::wstring& imagePath, const int* radii,
         std::string filename = wstring_to_string(filenameW); // Convert to std::string
 
         // Save the elapsed time to the CSV file
-        SaveElapsedTimeToCSV(filename, radius, elapsedTime);
+        SaveElapsedTimeToCSV(filename, radius, elapsedTime, imgData->useASM);
         RedrawImage(hwnd);
         UpdateWindow(hwnd);
         Sleep(1000);
@@ -299,8 +383,6 @@ double ApplyBlur(HWND hwnd, ImageData* imgData, int rad) {
     RedrawImage(hwnd);
     LARGE_INTEGER frequency, start, end;
 
-
-    // Apply the box blur with a radius of 10 pixels
     if (imgData->useASM == false)
     {
         QueryPerformanceFrequency(&frequency);
@@ -329,7 +411,7 @@ double ApplyBlur(HWND hwnd, ImageData* imgData, int rad) {
 }
 
 // Function to initialize ImageData structure
-void LoadNewImage(HWND hwnd, ImageData* imgData, const std::wstring& imagePath = L"Vesuvius_in_Eruption.jpg")
+void LoadNewImage(HWND hwnd, ImageData* imgData, const std::wstring& imagePath = L"testImgs\\¿acy_144.jpg")
 {
     if (!imgData)
         return; // Exit initialization
@@ -563,8 +645,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     // Create the window
     HWND hwnd = CreateWindowExW(
-        0, CLASS_NAME, L"Image Box Blur", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1280 * 2, 720,
+        0, CLASS_NAME, L"Assembler Programming Languages Gaussian Blur ", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1920, 540,
         nullptr, nullptr, hInstance, nullptr
     );
 

@@ -38,17 +38,6 @@
 	kernel DWORD 21 DUP(0.0)  ; Define an array of 21
 	tablecount QWORD 0       ; A QWORD to store the number of data inputs (initially 0)
 
-	; values of (sqrt(e)^1/sigm^2)
-	pvals	QWORD 7.38905609893 
-			QWORD 1.6487212707
-			QWORD 1.248848869
-			QWORD 1.13314845307
-			QWORD 1.08328706767
-			QWORD 1.05712774476
-			QWORD 1.04166076253
-			QWORD 1.0317434075
-			QWORD 1.02499871407
-			QWORD 1.02020134003
 
 	blr_tab BYTE 24883200 DUP(?)
 	blr_tab_size QWORD 0
@@ -56,35 +45,39 @@
 .CODE	
 
 exppow PROC
-	mov		r8, radius
-	lea		rsi, pvals
-	shl		r8, 3
-	add		rsi, r8
-	sub		rsi, 8 
+	MOVSS	XMM1, XMM0		;xmm0 is a value of x and xmm1 is a value of x^n 
 
-	movq	xmm1, qword ptr [rsi]	; Load the value of pvals into xmm1
-	cvtsd2ss xmm1, xmm1
+	mov		r10, 1
 
-	mov     r8, r9					; r8 times will xmm0 be multiplied by itself so xmm0^r8
+	cvtsi2ss XMM2, r10		
+	ADDSS	XMM2, XMM1		;starting value and place that resault will be kept
 
-    ; Initialize loop variables
-    mov rax, 1                   ; loop counter for terms
-	movss	xmm0, xmm1				;keep initial val for multiplication
-	cmp r8, 0
-	jne calc_exp_loop
-	movss	xmm1, one
-	jmp proc_end
-calc_exp_loop:
-		cmp rax, r8
+	xor		r10, r10		;loop counter
+	mov		r11, 1			;factorial current 
+	mov		r12, 1			;factorial next num
+	
+	calc_exp_loop:
+		cmp r10, 10
 		jge proc_end
-		mulss xmm1, xmm0
-		
-		inc rax                       ; increment term counter
+
+		MULSS XMM1, XMM0		;calc x^n
+		MOVSS XMM4, XMM1
+
+		inc r12					;mov fac next num by 1
+		imul r11, r12			;mul the fac curr with fac next num to get n!
+	
+		cvtsi2ss xmm3, r11		;convert to float
+
+		divss xmm4, xmm3
+
+		addss xmm2, xmm4
+
+		inc r10                       ; increment loop counter
 		jmp calc_exp_loop
 
 
 	proc_end:
-	movss xmm0, xmm1
+	movss xmm0, xmm2
     ret                           ; Return from the function
 exppow ENDP
 
@@ -112,7 +105,6 @@ calcuGaussKernel1DASM PROC
 	divss	xmm0, xmm1		;/2
 	movss	stddiv, xmm0	;SAVE TO STDDIV
 
-
 	;prep for loop
 	mov		radius, RCX		;SAVE RAD
 	xor		rcx, rcx		;RESET RCX
@@ -129,21 +121,30 @@ calcuGaussKernel1DASM PROC
 
 					; Calculate x * x
 		mov		r9, rax
-		imul	r9, rax
+		imul	r9, rax				;x^2
 
+		movss 	xmm3, stddiv
+		mulss	xmm3, xmm3
+		addss   xmm3, xmm3			;2*stddiv^2
 
-		call    exppow				; Result is in xmm0 (top of 1d gauss distrb)
+		cvtsi2ss xmm2, r9
+
+		divss	xmm2, xmm3			;x^2/2*stddiv^2
+		movss	xmm0, xmm2			
+
+		call    exppow				
 
 		movss	xmm1, one 
 		divss	xmm1, xmm0
-		movss	xmm0, xmm1
+		movss	xmm0, xmm1			; Result is in xmm0 (top of 1d gauss distrb)
 
-		movss	xmm1, two_pi
-		movss	xmm2, stddiv
-		mulss	xmm1, xmm2
+		movss	xmm1, two_pi		; 2 * pi
+		movss	xmm2, stddiv		; stddiv
+		mulss	xmm2, xmm2			; stddiv^2
+		mulss	xmm1, xmm2			
 		sqrtss	xmm1, xmm1			;bottom of a 1d gauss distrb
 
-		divss	xmm0, xmm1
+		divss	xmm0, xmm1			;resault of 1d gauss distrb for x
 
 							;move to tab
 							;check if theres is space
@@ -154,7 +155,7 @@ calcuGaussKernel1DASM PROC
 
         lea		rcx, kernel				       ; Load the address of the table
         mov		rsi, rax				       ; Use rax as the index for the table
-        shl		rsi, 2							; Multiply the index by 8 (size of double) for correct byte address
+        shl		rsi, 2							; Multiply the index by  for correct byte address
         add		rcx, rsi                      ; Get the address of table[index]
 		movss	xmm1, xmm0                   
         movss	dword ptr [rcx], xmm1                 ; Move the computed value from xmm0 to table[index]
@@ -170,7 +171,6 @@ calcuGaussKernel1DASM PROC
 		cmp		rdi, ker_size				; Check if we have computed enough terms
 		jl		calc_kernel_loop 
 		
-	
 	;end loop 
 	xor		rdi, rdi
 	movss	xmm1, sum 
@@ -335,7 +335,7 @@ GaussianBlurHorizontalASM PROC
 
 					inc r13
 					cmp r13, radius
-					jl apply_kernel_loop
+					jle apply_kernel_loop
 
 				;_____________MOVE_TO_DEST_______________
 				movss	xmm0, sum_B      ; Load sum_B into xmm0
@@ -551,7 +551,7 @@ GaussianBlurVerticalASM PROC
 
 					inc r13
 					cmp r13, radius
-					jl apply_kernel_loop
+					jle apply_kernel_loop
 
 				;_____________MOVE_TO_DEST_______________
 				movss	xmm0, sum_B      ; Load sum_B into xmm0
