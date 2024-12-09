@@ -2,7 +2,7 @@
 ;													;
 ;	Assembler Programming Languages Gaussian Blur	;
 ;	Author:	Daniel Pasierb							;
-;	INF SSI GLI										;
+;	INF SSI GLI	2024/25								;
 ;	SEK 10											;
 ;													;
 ;													;
@@ -44,6 +44,7 @@
 
 .CODE	
 
+;rbp, rsp, rax, rbx, rcx, rdx, rsi, rdi, r10, r11, r12, xmm0, xmm1, xmm2, xmm3, xmm4
 exppow PROC
 	MOVSS	XMM1, XMM0		;xmm0 is a value of x and xmm1 is a value of x^n 
 
@@ -81,6 +82,7 @@ exppow PROC
     ret                           ; Return from the function
 exppow ENDP
 
+;rbp, rsp, rax, rbx, rcx, rdx, rsi, rdi, r9, xmm0, xmm1, xmm2, xmm3
 calcuGaussKernel1DASM PROC 
 	;initialize
 
@@ -198,7 +200,7 @@ calcuGaussKernel1DASM PROC
 			ret
 calcuGaussKernel1DASM ENDP
 
-
+;rax, rbx, rcx, rdx, r8, r9, r10, r11, r12, r12b, r12d, r13, r14, r15, rsi, rdi, rbp, rsp, xmm0, xmm1, xmm2
 GaussianBlurHorizontalASM PROC
 	; rcx	'src' 
 	; rdx	'kernel' 
@@ -407,7 +409,7 @@ GaussianBlurHorizontalASM PROC
 	ret
 GaussianBlurHorizontalASM ENDP
 
-
+; rax, rbx, rcx, rdx, r8, r9, r10, r11, r12, r12b, r12d, r13, r14, r15, rsi, rdi, rbp, rsp, xmm0, xmm1, xmm2
 GaussianBlurVerticalASM PROC
 	; rcx	'src' 
 	; rdx	'kernel' 

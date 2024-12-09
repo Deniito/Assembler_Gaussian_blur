@@ -12,12 +12,15 @@
 
 
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 extern "C" void  GaussianBlurHorizontalASM(unsigned char* src, float* kernel, int width, int height, int radius);
 extern "C" void  GaussianBlurVerticalASM(unsigned char* src, float* kernel, int width, int height, int radius);
 extern "C" float*  calcuGaussKernel1DASM(int radius);
 
+extern "C" {
+    __declspec(dllexport) void GaussianBlurHorizontal(unsigned char* src, float* kernel, int width, int height, int radius);
+    __declspec(dllexport) void GaussianBlurVertical(unsigned char* src, float* kernel, int width, int height, int radius);
+    __declspec(dllexport) float* calcuGaussKernel1D(int radius);
+
+}
 
